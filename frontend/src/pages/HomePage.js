@@ -1,46 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import GameCard from '../components/GameCard';
-// import { getGames } from '../services/gameService'; // Placeholder for API call
-
-const mockGames = [
-  {
-    id: 'cosmicrush',
-    name: 'Cosmic Rush',
-    description: 'Navigate your ship through an asteroid field. How long can you survive?',
-    thumbnailUrl: 'https://picsum.photos/seed/cosmicrush/400/300'
-  },
-  {
-    id: 'blockstacker',
-    name: 'Block Stacker',
-    description: 'Stack blocks perfectly to build the tallest tower. Precision is key!',
-    thumbnailUrl: 'https://picsum.photos/seed/blockstacker/400/300'
-  },
-  {
-    id: 'pixelpong',
-    name: 'Pixel Pong',
-    description: 'A modern twist on a classic. Challenge the AI or a friend!',
-    thumbnailUrl: 'https://picsum.photos/seed/pixelpong/400/300'
-  },
-  {
-    id: 'memorymatch',
-    name: 'Memory Match',
-    description: 'Test your memory by matching pairs of cards against the clock.',
-    thumbnailUrl: 'https://picsum.photos/seed/memorymatch/400/300'
-  },
-  {
-    id: 'speedclicker',
-    name: 'Speed Clicker',
-    description: 'How many times can you click the target in 10 seconds? Test your reflexes!',
-    thumbnailUrl: 'https://picsum.photos/seed/speedclicker/400/300'
-  },
-  {
-    id: 'mazerunnerx',
-    name: 'Maze Runner X',
-    description: 'Navigate complex mazes. Find the exit before time runs out!',
-    thumbnailUrl: 'https://picsum.photos/seed/mazerunner/400/300'
-  }
-];
+import { gameService } from '../services/gameService';
 
 const HomePage = () => {
   const [games, setGames] = useState([]);
@@ -48,23 +9,22 @@ const HomePage = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // In a real app, you would fetch games from an API:
-    // getGames()
-    //   .then(data => {
-    //     setGames(data);
-    //     setIsLoading(false);
-    //   })
-    //   .catch(err => {
-    //     console.error("Error fetching games:", err);
-    //     setError('Failed to load games. Please try again later.');
-    //     setIsLoading(false);
-    //   });
+    const fetchGames = async () => {
+      try {
+        setIsLoading(true);
+        const gamesData = await gameService.getGamesList();
+        setGames(gamesData);
+        setError(null);
+      } catch (err) {
+        console.error("Error fetching games:", err);
+        setError('Failed to load games. Please try again later.');
+        setGames([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
     
-    // Using mock data for now
-    setTimeout(() => { // Simulate API delay
-      setGames(mockGames);
-      setIsLoading(false);
-    }, 500);
+    fetchGames();
   }, []);
 
   return (
@@ -81,7 +41,7 @@ const HomePage = () => {
       {isLoading && (
         <div className="text-center py-10">
           <p className="text-xl text-text-medium">Loading awesome games...</p>
-          {/* You can add a spinner component here */}
+          <div className="mt-4 w-12 h-12 border-4 border-accent border-t-transparent border-solid rounded-full animate-spin mx-auto"></div>
         </div>
       )}
 

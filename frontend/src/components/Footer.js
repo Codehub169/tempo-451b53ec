@@ -1,7 +1,5 @@
 import React from 'react';
-// import { APP_NAME } from '../config'; // To be implemented in a future batch
-
-const APP_NAME = 'Arcade Haven'; // Placeholder for config.js import
+import { APP_NAME } from '../config';
 
 /**
  * Footer component

@@ -1,30 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
 import LeaderboardTable from '../components/LeaderboardTable';
-import Button from '../components/ui/Button'; // Using Button for tabs
-// import { getLeaderboard } from '../services/scoreService'; // Placeholder for API
-// import { getGamesList } from '../services/gameService'; // Placeholder for API
-
-// Mock data - replace with API calls
-const mockGameList = [
-  { id: 'cosmicrush', name: 'Cosmic Rush' },
-  { id: 'blockstacker', name: 'Block Stacker' },
-  { id: 'pixelpong', name: 'Pixel Pong' },
-  { id: 'memorymatch', name: 'Memory Match' },
-  { id: 'speedclicker', name: 'Speed Clicker' },
-  { id: 'mazerunnerx', name: 'Maze Runner X' },
-];
-
-const mockLeaderboards = {
-  cosmicrush: [
-    { id: 's1', rank: 1, player: { username: 'GalaxyGamer' }, scoreValue: 15230, date: '2024-07-20' },
-    { id: 's2', rank: 2, player: { username: 'StarSeeker' }, scoreValue: 12800, date: '2024-07-19' },
-  ],
-  blockstacker: [
-    { id: 's3', rank: 1, player: { username: 'TowerTitan' }, scoreValue: 255, date: '2024-07-21' },
-  ],
-  // Add more mock scores for other games if needed
-};
+import Button from '../components/ui/Button';
+import { scoreService } from '../services/scoreService';
+import { gameService } from '../services/gameService';
 
 const LeaderboardPage = () => {
   const [games, setGames] = useState([]);
@@ -35,79 +14,109 @@ const LeaderboardPage = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Fetch list of games for tabs
-    // getGamesList().then(setGames).catch(err => setError('Failed to load game list.'));
-    setGames(mockGameList);
-    setIsLoadingGames(false);
-    if (mockGameList.length > 0) {
-      //setSelectedGameId(mockGameList[0].id); // Select first game by default
-    }
+    const fetchGamesList = async () => {
+      setIsLoadingGames(true);
+      setError(null);
+      try {
+        const gamesData = await gameService.getGamesList();
+        setGames(gamesData);
+        // Optionally select the first game by default:
+        // if (gamesData && gamesData.length > 0) {
+        //   setSelectedGameId(gamesData[0].id);
+        // }
+      } catch (err) {
+        console.error('Failed to load game list:', err);
+        setError('Failed to load game list. Please try again later.');
+        setGames([]);
+      } finally {
+        setIsLoadingGames(false);
+      }
+    };
+    fetchGamesList();
   }, []);
+
+  const fetchLeaderboardForGame = useCallback(async (gameIdForLeaderboard) => {
+    if (!gameIdForLeaderboard) {
+      setScores([]);
+      return;
+    }
+    setIsLoadingScores(true);
+    setError(null); 
+    try {
+      const game = games.find(g => g.id === gameIdForLeaderboard);
+      if (!game || !game.name) {
+        throw new Error(`Game details not found for ID: ${gameIdForLeaderboard}. Unable to fetch leaderboard.`);
+      }
+      const data = await scoreService.getLeaderboard(game.name);
+      setScores(data);
+    } catch (err) {
+      console.error(`Error fetching leaderboard for game ID ${gameIdForLeaderboard}:`, err);
+      const gameNameDisplay = games.find(g => g.id === gameIdForLeaderboard)?.name || gameIdForLeaderboard;
+      setError(`Failed to load scores for ${gameNameDisplay}. Please try again.`);
+      setScores([]);
+    } finally {
+      setIsLoadingScores(false);
+    }
+  }, [games, scoreService]);
 
   useEffect(() => {
     if (selectedGameId) {
-      setIsLoadingScores(true);
-      setError(null);
-      // Fetch leaderboard for selectedGameId
-      // getLeaderboard(selectedGameId)
-      //   .then(data => {
-      //     setScores(data);
-      //     setIsLoadingScores(false);
-      //   })
-      //   .catch(err => {
-      //     console.error(`Error fetching leaderboard for ${selectedGameId}:`, err);
-      //     setError(`Failed to load scores for ${games.find(g => g.id === selectedGameId)?.name}.`);
-      //     setScores([]);
-      //     setIsLoadingScores(false);
-      //   });
-      setTimeout(() => { // Simulate API delay
-        setScores(mockLeaderboards[selectedGameId] || []);
-        setIsLoadingScores(false);
-      }, 300);
+      fetchLeaderboardForGame(selectedGameId);
     }
      else {
-      setScores([]); // Clear scores if no game is selected
+      setScores([]); 
+      setError(null); 
     }
-  }, [selectedGameId, games]);
+  }, [selectedGameId, fetchLeaderboardForGame]);
 
-  const selectedGame = games.find(g => g.id === selectedGameId);
+  const selectedGameDetails = games.find(g => g.id === selectedGameId);
 
   return (
     <Layout>
-      <section className="py-8">
+      <section className="py-8 px-4">
         <h1 className="font-secondary text-3xl sm:text-4xl text-center mb-8">
           Top Player <span className="text-accent">Leaderboards</span>
         </h1>
 
         {isLoadingGames ? (
-          <div className="text-center text-text-medium">Loading game list...</div>
+          <div className="text-center text-text-medium py-4">Loading game list...</div>
         ) : games.length === 0 && !error ? (
-          <div className="text-center text-text-medium">No games available to display leaderboards.</div>
-        ) : (
+          <div className="text-center text-text-medium py-4">No games available to display leaderboards.</div>
+        ) : games.length > 0 ? (
           <div className="flex flex-wrap justify-center gap-2 mb-8 px-2">
             {games.map(game => (
               <Button
                 key={game.id}
                 onClick={() => setSelectedGameId(game.id)}
                 variant={selectedGameId === game.id ? 'primary' : 'secondary'}
-                className={`px-4 py-2 text-sm sm:text-base ${selectedGameId !== game.id ? '!bg-secondary-bg hover:!bg-border-color focus:!ring-accent/50' : ''}`}
+                className={`px-4 py-2 text-sm sm:text-base transition-colors duration-150 ease-in-out ${selectedGameId !== game.id ? '!bg-secondary-bg text-text-medium hover:!bg-border-color hover:text-text-light focus:!ring-accent/50' : 'text-white'}`}
               >
                 {game.name}
               </Button>
             ))}
           </div>
-        )}
+        ) : null}
         
-        {error && <div className="text-center text-error bg-error/10 p-3 rounded-md mb-6">{error}</div>}
+        {error && (
+            <div className="text-center text-error bg-error/10 p-3 rounded-md mb-6 max-w-xl mx-auto">
+                {error}
+            </div>
+        )}
 
-        {selectedGameId ? (
+        {selectedGameId && !isLoadingScores && !error ? (
           <LeaderboardTable 
             scores={scores} 
-            gameName={selectedGame?.name || 'Selected Game'} 
-            isLoading={isLoadingScores} 
+            gameName={selectedGameDetails?.name || 'Selected Game'} 
+            isLoading={false} // isLoadingScores is false here
+          />
+        ) : selectedGameId && isLoadingScores ? (
+           <LeaderboardTable 
+            scores={[]} 
+            gameName={selectedGameDetails?.name || 'Selected Game'} 
+            isLoading={true} 
           />
         ) : (
-          !isLoadingGames && games.length > 0 && (
+          !isLoadingGames && games.length > 0 && !error && (
             <div className="text-center text-text-medium py-10 text-xl">
               Please select a game to view its leaderboard.
             </div>
