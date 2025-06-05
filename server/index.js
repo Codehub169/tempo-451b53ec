@@ -9,7 +9,11 @@ const scoreRoutes = require('./routes/scoreRoutes');
 const app = express();
 
 // Middleware
-app.use(cors()); // Enable CORS for all routes
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000', // Restrict to frontend URL in production
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 app.use(express.json()); // Parse JSON request bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded request bodies
 
@@ -25,6 +29,7 @@ app.use(express.static(frontendBuildPath));
 app.get('*', (req, res) => {
   res.sendFile(path.join(frontendBuildPath, 'index.html'), (err) => {
     if (err) {
+      console.error('Error serving frontend index.html:', err);
       // If index.html is not found (e.g., during initial build or if path is wrong)
       // send a more informative error or a simple message.
       if (err.status === 404) {
@@ -39,9 +44,12 @@ app.get('*', (req, res) => {
 const PORT = process.env.PORT || 9000;
 
 // Sync database and start server
-sequelize.sync() // Use { force: true } during development to drop and recreate tables
+// In production, consider using migrations instead of sync({ alter: true })
+const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
+
+sequelize.sync(syncOptions)
   .then(() => {
-    console.log('Database synchronized successfully.');
+    console.log(`Database synchronized successfully${syncOptions.alter ? ' (alter:true)' : ''}.`);
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`Frontend should be accessible at http://localhost:${PORT}`);
@@ -49,6 +57,7 @@ sequelize.sync() // Use { force: true } during development to drop and recreate 
   })
   .catch(err => {
     console.error('Unable to connect to the database or start server:', err);
+    process.exit(1); // Exit if DB connection fails
   });
 
 module.exports = app; // Export for potential testing
