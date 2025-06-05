@@ -18,13 +18,13 @@ const PLAYER_START = { x: 1, y: 1 };
 const CELL_SIZE = 'min(3.5vw, 30px)'; // Responsive cell size
 const GAME_TIME_LIMIT = 60; // seconds
 
-const MazeRunnerXGame = ({ onScoreUpdate, onGameOver }) => {
+const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady }) => {
   const [playerPosition, setPlayerPosition] = useState(PLAYER_START);
   const [timeLeft, setTimeLeft] = useState(GAME_TIME_LIMIT);
   const [score, setScore] = useState(0);
   const [isGameActive, setIsGameActive] = useState(false);
   const [isGameWon, setIsGameWon] = useState(false);
-  const [isGameOver, setIsGameOver] = useState(false);
+  const [isGameOverState, setIsGameOverState] = useState(false); // Renamed to avoid conflict with prop
 
   const startGame = useCallback(() => {
     setPlayerPosition(PLAYER_START);
@@ -32,12 +32,29 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver }) => {
     setScore(0);
     setIsGameActive(true);
     setIsGameWon(false);
-    setIsGameOver(false);
-    onScoreUpdate(0);
+    setIsGameOverState(false);
+    if (onScoreUpdate) {
+      onScoreUpdate(0);
+    }
   }, [onScoreUpdate]);
 
   useEffect(() => {
-    if (!isGameActive || isGameOver) return;
+    if (onReady) {
+      onReady();
+    }
+  }, [onReady]);
+
+  useEffect(() => {
+    if (isRunning && (!isGameActive || isGameOverState)) {
+      startGame();
+    }
+    // Note: We don't handle isRunning becoming false here to stop the game,
+    // as GamePage typically uses pause or game over states for that.
+    // If isRunning is meant to be a hard stop/reset, more logic would be needed.
+  }, [isRunning, startGame, isGameActive, isGameOverState]);
+
+  useEffect(() => {
+    if (!isGameActive || isGameOverState || isPaused) return;
 
     const handleKeyDown = (e) => {
       let newX = playerPosition.x;
@@ -60,52 +77,55 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver }) => {
         if (MAZE_GRID[newY][newX] === 2) { // Reached exit
           setIsGameActive(false);
           setIsGameWon(true);
-          setIsGameOver(true);
+          setIsGameOverState(true);
           const finalScore = timeLeft * 10 + 1000; // Base score + time bonus
           setScore(finalScore);
-          onGameOver(finalScore);
+          if (onGameOver) {
+            onGameOver(finalScore);
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isGameActive, isGameOver, playerPosition, timeLeft, onGameOver]);
+  }, [isGameActive, isGameOverState, isPaused, playerPosition, timeLeft, onGameOver]);
 
   useEffect(() => {
-    if (isGameActive && !isGameOver) {
+    if (isGameActive && !isGameOverState && !isPaused) {
       if (timeLeft > 0) {
         const timer = setTimeout(() => {
           setTimeLeft(prevTime => prevTime - 1);
-          // Gradually increase score over time for effort, exit gives big bonus
-          const currentScore = Math.max(0, (GAME_TIME_LIMIT - (timeLeft -1)) * 5);
-          setScore(currentScore);
-          onScoreUpdate(currentScore);
+          const newTimeLeft = timeLeft - 1;
+          const currentScoreVal = Math.max(0, (GAME_TIME_LIMIT - newTimeLeft) * 5);
+          setScore(currentScoreVal);
+          if (onScoreUpdate) {
+            onScoreUpdate(currentScoreVal);
+          }
         }, 1000);
         return () => clearTimeout(timer);
       } else {
         // Time's up
         setIsGameActive(false);
-        setIsGameOver(true);
-        onGameOver(score);
+        setIsGameOverState(true);
+        if (onGameOver) {
+          onGameOver(score);
+        }
       }
     }
-  }, [isGameActive, isGameOver, timeLeft, score, onScoreUpdate]);
+  }, [isGameActive, isGameOverState, isPaused, timeLeft, score, onScoreUpdate, onGameOver]);
 
-  if (!isGameActive && !isGameOver) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-800 p-4 rounded-lg">
-        <h2 className="text-3xl font-bold text-accent mb-6">Maze Runner X</h2>
-        <button 
-          onClick={startGame}
-          className="px-6 py-3 bg-accent text-white font-semibold rounded-lg text-xl hover:bg-pink-700 transition-colors duration-300"
-        >
-          Start Game
-        </button>
-      </div>
-    );
+  // If the game hasn't been started by GamePage via isRunning, show nothing or a placeholder
+  // Or, if GamePage indicates not running, but game was active, it might mean pause or stop.
+  // For simplicity, we render the game area once isRunning is true or game is internally active.
+  if (!isGameActive && !isGameOverState && !isRunning) {
+     return (
+        <div className="flex flex-col items-center justify-center h-full bg-gray-800 p-4 rounded-lg">
+            <p className="text-text-medium">Waiting for game to start...</p>
+        </div>
+     ); // Or some placeholder if GamePage doesn't show its own loading
   }
-
+  
   return (
     <div className="flex flex-col items-center justify-center h-full bg-gray-800 p-2 sm:p-4 rounded-lg">
       <div className="w-full flex justify-between items-center mb-2 sm:mb-4 px-2">
@@ -119,6 +139,8 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver }) => {
           gridTemplateRows: `repeat(${MAZE_GRID.length}, ${CELL_SIZE})`,
           width: `calc(${MAZE_GRID[0].length} * ${CELL_SIZE})`,
           height: `calc(${MAZE_GRID.length} * ${CELL_SIZE})`,
+          minWidth: `calc(${MAZE_GRID[0].length} * 20px)`, // ensure minimum size based on smallest cell_size part
+          minHeight: `calc(${MAZE_GRID.length} * 20px)`,
         }}
       >
         {MAZE_GRID.map((row, y) =>
@@ -141,18 +163,23 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver }) => {
           })
         )}
       </div>
-      {isGameOver && (
-        <div className="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center rounded-lg p-4">
+      {isGameOverState && (
+        <div className="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center rounded-lg p-4 z-10">
           <h3 className="text-2xl sm:text-3xl font-bold text-white mb-4 text-center">
             {isGameWon ? 'Congratulations! You Escaped!' : 'Game Over! Time\'s Up!'}
           </h3>
           <p className="text-lg sm:text-xl text-white mb-6">Final Score: {score}</p>
           <button 
-            onClick={startGame}
+            onClick={startGame} // This Play Again button is internal to the game
             className="px-6 py-3 bg-accent text-white font-semibold rounded-lg text-xl hover:bg-pink-700 transition-colors duration-300"
           >
             Play Again
           </button>
+        </div>
+      )}
+       {isPaused && isGameActive && !isGameOverState && (
+        <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center rounded-lg p-4 z-10">
+          <h3 className="text-2xl sm:text-3xl font-bold text-white">Paused</h3>
         </div>
       )}
     </div>

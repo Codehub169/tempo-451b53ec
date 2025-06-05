@@ -19,7 +19,7 @@ const LeaderboardPage = () => {
       setError(null);
       try {
         const gamesData = await gameService.getGamesList();
-        setGames(gamesData);
+        setGames(gamesData || []); // Ensure gamesData is an array
         // Optionally select the first game by default:
         // if (gamesData && gamesData.length > 0) {
         //   setSelectedGameId(gamesData[0].id);
@@ -45,10 +45,13 @@ const LeaderboardPage = () => {
     try {
       const game = games.find(g => g.id === gameIdForLeaderboard);
       if (!game || !game.name) {
-        throw new Error(`Game details not found for ID: ${gameIdForLeaderboard}. Unable to fetch leaderboard.`);
+        // This error might occur if games list is empty or gameId is stale
+        const errorMessage = `Game details not found for ID: ${gameIdForLeaderboard}. Unable to fetch leaderboard.`;
+        console.error(errorMessage);
+        throw new Error(errorMessage);
       }
       const data = await scoreService.getLeaderboard(game.name);
-      setScores(data);
+      setScores(data || []); // Ensure data is an array
     } catch (err) {
       console.error(`Error fetching leaderboard for game ID ${gameIdForLeaderboard}:`, err);
       const gameNameDisplay = games.find(g => g.id === gameIdForLeaderboard)?.name || gameIdForLeaderboard;
@@ -57,17 +60,17 @@ const LeaderboardPage = () => {
     } finally {
       setIsLoadingScores(false);
     }
-  }, [games, scoreService]);
+  }, [games, scoreService]); // Added scoreService to dependencies
 
   useEffect(() => {
-    if (selectedGameId) {
+    if (selectedGameId && games.length > 0) { // Ensure games list is populated before fetching
       fetchLeaderboardForGame(selectedGameId);
     }
-     else {
+     else if (!selectedGameId) {
       setScores([]); 
-      setError(null); 
+      // setError(null); // Keep existing errors unless a new selection is made
     }
-  }, [selectedGameId, fetchLeaderboardForGame]);
+  }, [selectedGameId, fetchLeaderboardForGame, games]); // Added games to dependencies
 
   const selectedGameDetails = games.find(g => g.id === selectedGameId);
 
@@ -97,30 +100,30 @@ const LeaderboardPage = () => {
           </div>
         ) : null}
         
-        {error && (
+        {error && !isLoadingScores && (
             <div className="text-center text-error bg-error/10 p-3 rounded-md mb-6 max-w-xl mx-auto">
                 {error}
             </div>
         )}
 
-        {selectedGameId && !isLoadingScores && !error ? (
+        {selectedGameId && !isLoadingScores && !error && (
           <LeaderboardTable 
             scores={scores} 
             gameName={selectedGameDetails?.name || 'Selected Game'} 
-            isLoading={false} // isLoadingScores is false here
+            isLoading={false} 
           />
-        ) : selectedGameId && isLoadingScores ? (
+        )}
+        {selectedGameId && isLoadingScores && (
            <LeaderboardTable 
             scores={[]} 
             gameName={selectedGameDetails?.name || 'Selected Game'} 
             isLoading={true} 
           />
-        ) : (
-          !isLoadingGames && games.length > 0 && !error && (
+        )}
+        {!selectedGameId && !isLoadingGames && games.length > 0 && !error && (
             <div className="text-center text-text-medium py-10 text-xl">
               Please select a game to view its leaderboard.
             </div>
-          )
         )}
       </section>
     </Layout>

@@ -18,26 +18,26 @@ const GamePage = () => {
 
   const [currentScore, setCurrentScore] = useState(0);
   const [highScore, setHighScore] = useState(0); // User's session high score, or fetched personal best if implemented
-  const [gameStatus, setGameStatus] = useState('Ready'); // Ready, Playing, Paused, GameOver
+  const [gameStatus, setGameStatus] = useState('Loading'); // Loading, Ready, Playing, Paused, GameOver
   const [isGameRunning, setIsGameRunning] = useState(false);
 
   useEffect(() => {
     const fetchGameData = async () => {
       setIsLoading(true);
       setError(null);
-      setGameDetails(null); // Reset game details on gameId change
-      setGameComponent(null); // Reset game component
-      setCurrentScore(0); // Reset score for new game
-      setHighScore(0); // Reset high score for new game (session based)
-      setGameStatus('Ready');
+      setGameDetails(null); 
+      setGameComponent(null); 
+      setCurrentScore(0); 
+      setHighScore(0); 
+      setGameStatus('Loading');
       setIsGameRunning(false);
 
       try {
         const details = await gameService.getGameDetails(gameId.toLowerCase());
         if (details) {
           setGameDetails(details);
-          // The component itself is lazy-loaded by gameService
           setGameComponent(() => details.component); 
+          // Game component will call onReady to set gameStatus to 'Ready'
           // TODO: Fetch actual high score for this game and user if available
           // if (isAuthenticated && user && details.name) { 
           //   try {
@@ -47,29 +47,36 @@ const GamePage = () => {
           // }
         } else {
           setError('Game not found. It might be an invalid URL or the game is not available.');
+          setGameStatus('Error');
         }
       } catch (err) {
         console.error("Error fetching game details:", err);
         setError('Failed to load game details. Please try again later.');
+        setGameStatus('Error');
       } finally {
         setIsLoading(false);
       }
     };
-    fetchGameData();
-  }, [gameId, isAuthenticated, user]); // user is included for the high score fetching TODO
+    if (gameId) {
+      fetchGameData();
+    }
+  }, [gameId, isAuthenticated, user]);
 
   const handleStartGame = useCallback(() => {
+    // This will trigger the isRunning prop for the GameComponent
+    // The GameComponent's useEffect for isRunning should then call its internal startGame method.
     setIsGameRunning(true);
     setGameStatus('Playing');
-    setCurrentScore(0);
-    // Game component should handle its internal start logic based on isRunning prop
+    setCurrentScore(0); // Reset score on this page, game component might also reset its internal score
   }, []);
 
   const handlePauseResumeGame = useCallback(() => {
-    if (isGameRunning && gameStatus !== 'GameOver' && gameStatus !== 'Ready') {
-      setGameStatus(prevStatus => (prevStatus === 'Paused' ? 'Playing' : 'Paused'));
+    if (gameStatus === 'Playing') {
+      setGameStatus('Paused');
+    } else if (gameStatus === 'Paused') {
+      setGameStatus('Playing');
     }
-  }, [isGameRunning, gameStatus]);
+  }, [gameStatus]);
 
   const handleExitGame = () => {
     navigate('/');
@@ -80,8 +87,8 @@ const GamePage = () => {
   }, []);
 
   const onGameOver = useCallback(async (finalScore) => {
-    setGameStatus('Game Over');
-    setIsGameRunning(false);
+    setGameStatus('GameOver');
+    setIsGameRunning(false); // Signal that the game is no longer actively running from GamePage's perspective
     setCurrentScore(finalScore);
     
     if (finalScore > highScore) {
@@ -97,7 +104,7 @@ const GamePage = () => {
         // Optionally, show an error message to the user (e.g., using a toast notification)
       }
     }
-  }, [highScore, isAuthenticated, gameDetails, scoreService]);
+  }, [highScore, isAuthenticated, gameDetails, scoreService]); // Added scoreService to dependencies
 
   if (isLoading) {
     return <Layout><div className="text-center py-10 text-xl text-text-medium">Loading game details...</div></Layout>;
@@ -134,9 +141,9 @@ const GamePage = () => {
               onScoreUpdate={onScoreUpdate} 
               onGameOver={onGameOver} 
               isPaused={gameStatus === 'Paused'}
-              isRunning={isGameRunning}
+              isRunning={isGameRunning} // This prop tells the game component to start/restart
               onReady={() => setGameStatus('Ready')}
-              key={gameId} // Ensures GameComponent remounts if gameId changes, resetting its internal state
+              key={gameId} // Ensures GameComponent remounts if gameId changes
             />
           </Suspense>
         </div>
@@ -169,6 +176,7 @@ const GamePage = () => {
             onClick={handleStartGame} 
             variant="primary" 
             size="lg"
+            disabled={gameStatus === 'Playing' || gameStatus === 'Loading' || gameStatus === 'Error'} // Disable start if already playing or loading
           >
             {gameStatus === 'Playing' || gameStatus === 'Paused' ? 'Restart Game' : 'Start Game'}
           </Button>
@@ -176,7 +184,7 @@ const GamePage = () => {
             onClick={handlePauseResumeGame} 
             variant="secondary" 
             size="lg" 
-            disabled={!isGameRunning || gameStatus === 'GameOver' || gameStatus === 'Ready'}
+            disabled={gameStatus !== 'Playing' && gameStatus !== 'Paused'}
           >
             {gameStatus === 'Paused' ? 'Resume' : 'Pause'}
           </Button>
