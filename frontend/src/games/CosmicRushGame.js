@@ -18,6 +18,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
   const [isGameActive, setIsGameActive] = useState(false);
   const gameAreaRef = useRef(null);
   const animationFrameId = useRef(null);
+  // const nextObstacleId = useRef(0); // Alternative for obstacle IDs if Date.now() proves problematic
 
   const resetGame = useCallback(() => {
     setPlayerX(GAME_WIDTH / 2 - PLAYER_WIDTH / 2);
@@ -25,41 +26,47 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     setScore(0);
     setInternalIsGameOver(false);
     setIsGameActive(true);
+    // nextObstacleId.current = 0; // Reset if using incrementing ID
     if (onScoreUpdate) onScoreUpdate(0);
   }, [onScoreUpdate]);
 
   useEffect(() => {
     if (onReady) onReady();
+    // Focus the game area when it's ready, if needed for direct keyboard events
+    // if (gameAreaRef.current) gameAreaRef.current.focus();
   }, [onReady]);
 
   useEffect(() => {
     if (isRunning && (!isGameActive || internalIsGameOver)) {
       resetGame();
     }
-    // No explicit stop logic here; pause and game over are handled by isPaused and internalIsGameOver
   }, [isRunning, resetGame, isGameActive, internalIsGameOver]);
 
   const gameTick = useCallback(() => {
     if (internalIsGameOver || !isGameActive) {
-      // If game is over or not active, ensure loop is stopped
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       return;
     }
 
     if (isPaused) {
-      // If paused, keep the animation loop "spinning" but don't update game state
       animationFrameId.current = requestAnimationFrame(gameTick);
       return;
     }
 
-    let currentObstacles = obstacles;
-    let newObstacles = currentObstacles
+    // Use functional updates if obstacles or playerX were needed from refs to reduce gameTick deps
+    // However, current dependencies are correct for the logic within gameTick.
+    let newObstacles = obstacles
       .map(obs => ({ ...obs, y: obs.y + OBSTACLE_SPEED }))
       .filter(obs => obs.y < GAME_HEIGHT);
 
     if (Math.random() < OBSTACLE_SPAWN_RATE) {
       const newObstacleX = Math.random() * (GAME_WIDTH - OBSTACLE_WIDTH);
-      newObstacles.push({ x: newObstacleX, y: 0, id: Date.now() });
+      newObstacles.push({ 
+        x: newObstacleX, 
+        y: 0, 
+        id: Date.now() + Math.random() // Date.now() alone might collide in rapid succession; Math.random makes it more unique
+        // id: nextObstacleId.current++ // Alternative robust ID
+      });
     }
 
     let collisionDetected = false;
@@ -67,8 +74,8 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       if (
         playerX < obs.x + OBSTACLE_WIDTH &&
         playerX + PLAYER_WIDTH > obs.x &&
-        GAME_HEIGHT - PLAYER_HEIGHT < obs.y + OBSTACLE_HEIGHT && // Player's top edge vs obstacle's bottom edge
-        GAME_HEIGHT > obs.y // Player's bottom edge vs obstacle's top edge (player is at y=GAME_HEIGHT)
+        GAME_HEIGHT - PLAYER_HEIGHT < obs.y + OBSTACLE_HEIGHT &&
+        GAME_HEIGHT > obs.y
       ) {
         collisionDetected = true;
         break;
@@ -78,7 +85,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     if (collisionDetected) {
       setInternalIsGameOver(true);
       setIsGameActive(false);
-      if (onGameOver) onGameOver(score); // score is from closure, representing score *before* this potential tick's increment
+      if (onGameOver) onGameOver(score); 
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       return;
     }
@@ -125,15 +132,17 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     } else if (direction === 'right') {
       setPlayerX(prevX => Math.min(GAME_WIDTH - PLAYER_WIDTH, prevX + PLAYER_MOVE_AMOUNT));
     }
-  }, [internalIsGameOver, isGameActive, isPaused]);
+  }, [internalIsGameOver, isGameActive, isPaused]); // PLAYER_MOVE_AMOUNT is constant
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Check if game is in a state to accept input for movement
       if (internalIsGameOver || !isGameActive || isPaused) return;
-      if (e.key === 'ArrowLeft') {
+      
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
         e.preventDefault();
         movePlayer('left');
-      } else if (e.key === 'ArrowRight') {
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
         e.preventDefault();
         movePlayer('right');
       }
@@ -145,6 +154,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     };
   }, [internalIsGameOver, isGameActive, isPaused, movePlayer]);
   
+  // Initial message before the game is started by the parent (via isRunning prop)
   if (!isGameActive && !isRunning && !internalIsGameOver) {
     return (
       <div className="flex items-center justify-center w-full h-full text-text-medium">
@@ -156,12 +166,12 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
   return (
     <div
       ref={gameAreaRef}
-      className="relative bg-gray-800 w-full h-full overflow-hidden border-2 border-accent select-none touch-manipulation"
+      className="relative bg-primary-bg w-full h-full overflow-hidden border-2 border-accent select-none touch-manipulation"
       style={{ width: `${GAME_WIDTH}px`, height: `${GAME_HEIGHT}px` }}
-      tabIndex={0} 
+      tabIndex={0} // Makes the div focusable, useful if events were attached here
     >
       <div
-        className="absolute bg-blue-500"
+        className="absolute bg-blue-500" // Player color, can be themed if desired
         style={{
           width: `${PLAYER_WIDTH}px`,
           height: `${PLAYER_HEIGHT}px`,
@@ -169,41 +179,47 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
           bottom: `0px`,
           transition: 'left 0.05s linear'
         }}
+        role="img" 
+        aria-label="Player Ship"
       />
 
       {obstacles.map(obs => (
         <div
           key={obs.id}
-          className="absolute bg-red-500"
+          className="absolute bg-red-500" // Obstacle color, can be themed
           style={{
             width: `${OBSTACLE_WIDTH}px`,
             height: `${OBSTACLE_HEIGHT}px`,
             left: `${obs.x}px`,
             top: `${obs.y}px`,
           }}
+          role="img"
+          aria-label="Obstacle"
         />
       ))}
 
       {internalIsGameOver && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-75 text-white z-10">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-75 text-white z-10 p-4">
           <h2 className="text-3xl font-bold font-secondary mb-4">Game Over!</h2>
           <p className="text-xl">Final Score: {score}</p>
         </div>
       )}
 
       {isGameActive && !internalIsGameOver && (
-        <div className="absolute bottom-4 left-0 right-0 flex justify-around px-4 z-20">
+        <div className="absolute bottom-4 left-0 right-0 flex justify-around px-4 z-20 md:hidden">
           <button 
             onTouchStart={(e) => { e.preventDefault(); movePlayer('left'); }}
             onMouseDown={(e) => { e.preventDefault(); movePlayer('left'); }} 
-            className="px-8 py-4 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent"
+            className="px-8 py-4 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent select-none"
+            aria-label="Move Left"
           >
             Left
           </button>
           <button 
             onTouchStart={(e) => { e.preventDefault(); movePlayer('right'); }}
             onMouseDown={(e) => { e.preventDefault(); movePlayer('right'); }} 
-            className="px-8 py-4 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent"
+            className="px-8 py-4 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent select-none"
+            aria-label="Move Right"
           >
             Right
           </button>
