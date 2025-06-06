@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const MAZE_GRID_DATA = [
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -22,13 +22,14 @@ const WIN_BASE_SCORE = 1000;
 const WIN_TIME_BONUS_MULTIPLIER = 10;
 
 const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady }) => {
-  const [mazeGrid] = useState(MAZE_GRID_DATA); // mazeGrid is constant, no need for setMazeGrid
+  const [mazeGrid] = useState(MAZE_GRID_DATA);
   const [playerPosition, setPlayerPosition] = useState(PLAYER_START_POS);
   const [timeLeft, setTimeLeft] = useState(GAME_TIME_LIMIT_SECONDS);
   const [score, setScore] = useState(0);
   const [isGameActive, setIsGameActive] = useState(false);
   const [isGameWon, setIsGameWon] = useState(false);
   const [internalIsGameOver, setInternalIsGameOver] = useState(false);
+  const gameAreaRef = useRef(null); // Added for direct keyboard event handling
 
   const startGame = useCallback(() => {
     setPlayerPosition(PLAYER_START_POS);
@@ -50,6 +51,13 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
     }
   }, [isRunning, startGame, isGameActive, internalIsGameOver]);
 
+  // Focus game area when it becomes interactive and is not paused
+  useEffect(() => {
+    if (isGameActive && !internalIsGameOver && !isPaused && gameAreaRef.current) {
+      gameAreaRef.current.focus({ preventScroll: true });
+    }
+  }, [isGameActive, internalIsGameOver, isPaused]);
+
   const movePlayer = useCallback((dx, dy) => {
     if (!isGameActive || internalIsGameOver || isPaused) return;
 
@@ -66,26 +74,40 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
         setIsGameActive(false);
         setIsGameWon(true);
         setInternalIsGameOver(true);
-        const finalScore = WIN_BASE_SCORE + timeLeft * WIN_TIME_BONUS_MULTIPLIER; 
-        setScore(finalScore);
-        if (onGameOver) onGameOver(finalScore);
+        const finalScoreOnWin = WIN_BASE_SCORE + timeLeft * WIN_TIME_BONUS_MULTIPLIER; 
+        setScore(finalScoreOnWin);
+        if (onGameOver) onGameOver(finalScoreOnWin);
       }
     }
-  }, [isGameActive, internalIsGameOver, isPaused, playerPosition, mazeGrid, timeLeft, onGameOver, score]); // Added score for completeness, though not directly used in win calc
+  }, [isGameActive, internalIsGameOver, isPaused, playerPosition, mazeGrid, timeLeft, onGameOver]);
 
   useEffect(() => {
+    const gameElement = gameAreaRef.current;
+
     const handleKeyDown = (e) => {
       if (!isGameActive || internalIsGameOver || isPaused) return;
       
-      e.preventDefault();
+      const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+      if (arrowKeys.includes(e.key)) {
+          e.preventDefault();
+          e.stopPropagation();
+      }
+
       if (e.key === 'ArrowUp') movePlayer(0, -1);
       else if (e.key === 'ArrowDown') movePlayer(0, 1);
       else if (e.key === 'ArrowLeft') movePlayer(-1, 0);
       else if (e.key === 'ArrowRight') movePlayer(1, 0);
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    if (gameElement) {
+      gameElement.addEventListener('keydown', handleKeyDown);
+    }
+    
+    return () => {
+      if (gameElement) {
+        gameElement.removeEventListener('keydown', handleKeyDown);
+      }
+    };
   }, [movePlayer, isGameActive, internalIsGameOver, isPaused]);
 
   useEffect(() => {
@@ -117,7 +139,11 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
   }
   
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-gray-800 p-1 sm:p-2 rounded-lg relative touch-manipulation">
+    <div 
+      className="flex flex-col items-center justify-center h-full bg-gray-800 p-1 sm:p-2 rounded-lg relative touch-manipulation cursor-default"
+      ref={gameAreaRef} // Added ref
+      tabIndex={0} // Added tabIndex
+    >
       <div className="w-full flex justify-between items-center mb-2 sm:mb-4 px-1 sm:px-2">
         <p className="text-base sm:text-lg md:text-xl text-text-light">Score: <span className='font-bold text-accent'>{score}</span></p>
         <p className="text-base sm:text-lg md:text-xl text-text-light">Time: <span className='font-bold text-accent'>{timeLeft}s</span></p>
@@ -127,22 +153,33 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
         style={{
           gridTemplateColumns: `repeat(${mazeGrid[0].length}, ${CELL_SIZE_CSS})`,
           gridTemplateRows: `repeat(${mazeGrid.length}, ${CELL_SIZE_CSS})`,
+          outline: 'none' // Remove default browser focus outline on the grid itself
         }}
       >
         {mazeGrid.map((row, y) =>
           row.map((cell, x) => {
             let cellContent = null;
             let cellClass = 'flex items-center justify-center select-none';
-            if (cell === 1) cellClass += ' bg-secondary-bg';
-            else if (cell === 2) cellClass += ' bg-green-600';
-            else cellClass += ' bg-gray-700';
+            if (cell === 1) cellClass += ' bg-secondary-bg'; // Wall
+            else if (cell === 2) cellClass += ' bg-green-600'; // Exit
+            else cellClass += ' bg-gray-700'; // Path
 
             if (playerPosition.x === x && playerPosition.y === y) {
-              cellContent = <div className='w-3/4 h-3/4 bg-accent rounded-full shadow-inner'></div>;
+              cellContent = <div className='w-3/4 h-3/4 bg-accent rounded-full shadow-inner' role="img" aria-label="Player"></div>;
             }
+            let ariaCellLabel = "Path";
+            if (cell === 1) ariaCellLabel = "Wall";
+            if (cell === 2) ariaCellLabel = "Exit";
+            if (playerPosition.x === x && playerPosition.y === y) ariaCellLabel += ", Player current position";
 
             return (
-              <div key={`${x}-${y}`} className={cellClass} style={{width: CELL_SIZE_CSS, height: CELL_SIZE_CSS}}>
+              <div 
+                key={`${x}-${y}`} 
+                className={cellClass} 
+                style={{width: CELL_SIZE_CSS, height: CELL_SIZE_CSS}}
+                role="gridcell"
+                aria-label={ariaCellLabel}
+              >
                 {cellContent}
               </div>
             );
@@ -154,18 +191,18 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
         <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 z-20 opacity-70 hover:opacity-90 transition-opacity md:hidden">
             <div className="grid grid-cols-3 gap-1 w-36 h-36 sm:w-40 sm:h-40">
                 <div className="col-start-2 flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(0, -1);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(0,-1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold">↑</button>
+                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(0, -1);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(0,-1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Up">\[u2191]</button>
                 </div>
                 <div className="flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(-1, 0);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(-1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold">←</button>
+                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(-1, 0);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(-1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Left">\[u2190]</button>
                 </div>
                 <div className="flex justify-center items-center"> {/* Empty center for D-pad layout */}
                 </div>
                 <div className="flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(1, 0);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold">→</button>
+                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(1, 0);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Right">\[u2192]</button>
                 </div>
                 <div className="col-start-2 flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(0, 1);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(0,1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold">↓</button>
+                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(0, 1);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(0,1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Down">\[u2193]</button>
                 </div>
             </div>
         </div>

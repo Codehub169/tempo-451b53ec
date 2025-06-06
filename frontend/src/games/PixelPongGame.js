@@ -21,6 +21,7 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
   const [isGameActive, setIsGameActive] = useState(false);
   const [winner, setWinner] = useState(null);
   const animationFrameId = useRef(null);
+  const gameAreaRef = useRef(null); // Added for direct keyboard event handling
 
   const MAX_SCORE = 5;
 
@@ -29,7 +30,7 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
       x: GAME_WIDTH / 2 - BALL_SIZE / 2,
       y: GAME_HEIGHT / 2 - BALL_SIZE / 2,
       dx: (servedByPlayer ? 1 : -1) * (Math.random() > 0.5 ? 4 : -4), 
-      dy: (Math.random() > 0.5 ? 2.5 : -2.5) * (Math.random() * 0.5 + 0.75), // Add some y-speed variation
+      dy: (Math.random() > 0.5 ? 2.5 : -2.5) * (Math.random() * 0.5 + 0.75),
     });
   }, []);
 
@@ -55,6 +56,13 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
     }
   }, [isRunning, resetGame, isGameActive, internalIsGameOver]);
 
+  // Focus game area when it becomes interactive and is not paused
+  useEffect(() => {
+    if (isGameActive && !internalIsGameOver && !isPaused && gameAreaRef.current) {
+      gameAreaRef.current.focus({ preventScroll: true });
+    }
+  }, [isGameActive, internalIsGameOver, isPaused]);
+
   const gameTick = useCallback(() => {
     if (internalIsGameOver || !isGameActive) {
         if(animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
@@ -77,20 +85,20 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
     if (
       newBall.dx < 0 &&
       newBall.x <= PADDLE_WIDTH &&
-      newBall.x > 0 && // Ball is in front of or at the paddle line
+      newBall.x > 0 &&
       newBall.y + BALL_SIZE >= playerY &&
       newBall.y <= playerY + PADDLE_HEIGHT
     ) {
       newBall.dx *= -BALL_SPEED_INCREASE_FACTOR;
       newBall.x = PADDLE_WIDTH;
       const hitPos = (newBall.y + BALL_SIZE / 2 - playerY) / PADDLE_HEIGHT;
-      newBall.dy += (hitPos - 0.5) * 4; // More pronounced angle change
+      newBall.dy += (hitPos - 0.5) * 4;
     }
 
     if (
       newBall.dx > 0 &&
       newBall.x + BALL_SIZE >= GAME_WIDTH - PADDLE_WIDTH &&
-      newBall.x + BALL_SIZE < GAME_WIDTH && // Ball is in front of or at the paddle line
+      newBall.x + BALL_SIZE < GAME_WIDTH &&
       newBall.y + BALL_SIZE >= aiY &&
       newBall.y <= aiY + PADDLE_HEIGHT
     ) {
@@ -113,7 +121,7 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
         setInternalIsGameOver(true);
         setIsGameActive(false);
         setWinner('AI');
-        if (onGameOver) onGameOver({ player: playerScore, ai: newAiScore, winner: 'AI' });
+        if (onGameOver) onGameOver({ player: playerScore, ai: newAiScore, winner: 'AI', score: playerScore }); // Pass player's score for consistency
         return;
       }
       resetBall(true);
@@ -125,7 +133,7 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
         setInternalIsGameOver(true);
         setIsGameActive(false);
         setWinner('Player');
-        if (onGameOver) onGameOver({ player: newPlayerScore, ai: aiScore, winner: 'Player' });
+        if (onGameOver) onGameOver({ player: newPlayerScore, ai: aiScore, winner: 'Player', score: newPlayerScore }); // Pass player's score
         return;
       }
       resetBall(false);
@@ -136,10 +144,10 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
       const ballCenterY = newBall.y + BALL_SIZE / 2;
       const paddleCenterY = prevAiY + PADDLE_HEIGHT / 2;
       let difficultyFactor = Math.min(1, Math.abs(currentBallDxForAI) / 7);
-      let currentAiSpeed = AI_PADDLE_SPEED_BASE * difficultyFactor + (AI_PADDLE_SPEED_BASE * 0.5 * Math.min(playerScore, aiScore) / MAX_SCORE); // AI gets slightly better as game progresses
+      let currentAiSpeed = AI_PADDLE_SPEED_BASE * difficultyFactor + (AI_PADDLE_SPEED_BASE * 0.5 * Math.min(playerScore, aiScore) / MAX_SCORE);
 
       if (currentBallDxForAI > 0) {
-        if (paddleCenterY < ballCenterY - PADDLE_HEIGHT * 0.15) { // Slightly larger dead zone
+        if (paddleCenterY < ballCenterY - PADDLE_HEIGHT * 0.15) {
             return Math.min(GAME_HEIGHT - PADDLE_HEIGHT, prevAiY + currentAiSpeed);
         } else if (paddleCenterY > ballCenterY + PADDLE_HEIGHT * 0.15) {
             return Math.max(0, prevAiY - currentAiSpeed);
@@ -172,18 +180,33 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
   }, [internalIsGameOver, isGameActive, isPaused]);
 
   useEffect(() => {
+    const gameElement = gameAreaRef.current;
+
     const handleKeyDown = (e) => {
       if (internalIsGameOver || !isGameActive || isPaused) return;
+      
+      const relevantKeys = ['w', 'W', 'ArrowUp', 's', 'S', 'ArrowDown'];
+      if (relevantKeys.includes(e.key)) {
+          e.preventDefault();
+          e.stopPropagation();
+      }
+
       if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
-        e.preventDefault();
         movePlayerPaddle('up');
       } else if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
-        e.preventDefault();
         movePlayerPaddle('down');
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    if (gameElement) {
+      gameElement.addEventListener('keydown', handleKeyDown);
+    }
+    
+    return () => {
+      if (gameElement) {
+        gameElement.removeEventListener('keydown', handleKeyDown);
+      }
+    };
   }, [internalIsGameOver, isGameActive, isPaused, movePlayerPaddle]);
 
   if (!isGameActive && !isRunning && !internalIsGameOver) {
@@ -196,9 +219,10 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
 
   return (
     <div 
-      className="relative bg-black w-full h-full border-2 border-accent select-none touch-manipulation"
+      ref={gameAreaRef} // Added ref
+      className="relative bg-black w-full h-full border-2 border-accent select-none touch-manipulation cursor-default"
       style={{ width: `${GAME_WIDTH}px`, height: `${GAME_HEIGHT}px` }}
-      tabIndex={0}
+      tabIndex={0} // Added tabIndex
     >
       <div
         className="absolute bg-white"
@@ -208,6 +232,7 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
           left: `0px`,
           top: `${playerY}px`,
         }}
+        role="img" aria-label="Player Paddle"
       />
       <div
         className="absolute bg-white"
@@ -217,6 +242,7 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
           right: `0px`,
           top: `${aiY}px`,
         }}
+        role="img" aria-label="AI Paddle"
       />
       {isGameActive && !internalIsGameOver && (
         <div
@@ -227,6 +253,7 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
             left: `${ball.x}px`,
             top: `${ball.y}px`,
           }}
+          role="img" aria-label="Ball"
         />
       )}
       <div className="absolute top-4 left-1/4 text-white text-3xl font-secondary select-none">{playerScore}</div>
@@ -252,15 +279,17 @@ const PixelPongGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady
             onTouchStart={(e) => { e.preventDefault(); movePlayerPaddle('up'); }}
             onMouseDown={(e) => { e.preventDefault(); movePlayerPaddle('up'); }} 
             className="w-16 h-16 bg-accent/60 text-white rounded-full text-2xl font-bold active:bg-accent flex items-center justify-center shadow-lg"
+            aria-label="Move Paddle Up"
           >
-            ↑
+            \[u2191]
           </button>
           <button 
             onTouchStart={(e) => { e.preventDefault(); movePlayerPaddle('down'); }}
             onMouseDown={(e) => { e.preventDefault(); movePlayerPaddle('down'); }} 
             className="w-16 h-16 bg-accent/60 text-white rounded-full text-2xl font-bold active:bg-accent flex items-center justify-center shadow-lg"
+            aria-label="Move Paddle Down"
           >
-            ↓
+            \[u2193]
           </button>
         </div>
       )}

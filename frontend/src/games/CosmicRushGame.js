@@ -18,7 +18,6 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
   const [isGameActive, setIsGameActive] = useState(false);
   const gameAreaRef = useRef(null);
   const animationFrameId = useRef(null);
-  // const nextObstacleId = useRef(0); // Alternative for obstacle IDs if Date.now() proves problematic
 
   const resetGame = useCallback(() => {
     setPlayerX(GAME_WIDTH / 2 - PLAYER_WIDTH / 2);
@@ -26,14 +25,11 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     setScore(0);
     setInternalIsGameOver(false);
     setIsGameActive(true);
-    // nextObstacleId.current = 0; // Reset if using incrementing ID
     if (onScoreUpdate) onScoreUpdate(0);
   }, [onScoreUpdate]);
 
   useEffect(() => {
     if (onReady) onReady();
-    // Focus the game area when it's ready, if needed for direct keyboard events
-    // if (gameAreaRef.current) gameAreaRef.current.focus();
   }, [onReady]);
 
   useEffect(() => {
@@ -41,6 +37,13 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       resetGame();
     }
   }, [isRunning, resetGame, isGameActive, internalIsGameOver]);
+
+  // Focus game area when it becomes interactive and is not paused
+  useEffect(() => {
+    if (isGameActive && !internalIsGameOver && !isPaused && gameAreaRef.current) {
+      gameAreaRef.current.focus({ preventScroll: true });
+    }
+  }, [isGameActive, internalIsGameOver, isPaused]);
 
   const gameTick = useCallback(() => {
     if (internalIsGameOver || !isGameActive) {
@@ -53,8 +56,6 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       return;
     }
 
-    // Use functional updates if obstacles or playerX were needed from refs to reduce gameTick deps
-    // However, current dependencies are correct for the logic within gameTick.
     let newObstacles = obstacles
       .map(obs => ({ ...obs, y: obs.y + OBSTACLE_SPEED }))
       .filter(obs => obs.y < GAME_HEIGHT);
@@ -64,8 +65,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       newObstacles.push({ 
         x: newObstacleX, 
         y: 0, 
-        id: Date.now() + Math.random() // Date.now() alone might collide in rapid succession; Math.random makes it more unique
-        // id: nextObstacleId.current++ // Alternative robust ID
+        id: Date.now() + Math.random()
       });
     }
 
@@ -132,29 +132,36 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     } else if (direction === 'right') {
       setPlayerX(prevX => Math.min(GAME_WIDTH - PLAYER_WIDTH, prevX + PLAYER_MOVE_AMOUNT));
     }
-  }, [internalIsGameOver, isGameActive, isPaused]); // PLAYER_MOVE_AMOUNT is constant
+  }, [internalIsGameOver, isGameActive, isPaused]);
 
   useEffect(() => {
+    const gameElement = gameAreaRef.current; // Capture current ref value for cleanup
+
     const handleKeyDown = (e) => {
-      // Check if game is in a state to accept input for movement
       if (internalIsGameOver || !isGameActive || isPaused) return;
       
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
         e.preventDefault();
+        e.stopPropagation();
         movePlayer('left');
       } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
         e.preventDefault();
+        e.stopPropagation();
         movePlayer('right');
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    if (gameElement) {
+      gameElement.addEventListener('keydown', handleKeyDown);
+    }
+    
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      if (gameElement) {
+        gameElement.removeEventListener('keydown', handleKeyDown);
+      }
     };
   }, [internalIsGameOver, isGameActive, isPaused, movePlayer]);
   
-  // Initial message before the game is started by the parent (via isRunning prop)
   if (!isGameActive && !isRunning && !internalIsGameOver) {
     return (
       <div className="flex items-center justify-center w-full h-full text-text-medium">
@@ -166,12 +173,12 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
   return (
     <div
       ref={gameAreaRef}
-      className="relative bg-primary-bg w-full h-full overflow-hidden border-2 border-accent select-none touch-manipulation"
+      className="relative bg-primary-bg w-full h-full overflow-hidden border-2 border-accent select-none touch-manipulation cursor-default"
       style={{ width: `${GAME_WIDTH}px`, height: `${GAME_HEIGHT}px` }}
-      tabIndex={0} // Makes the div focusable, useful if events were attached here
+      tabIndex={0} // Makes the div focusable
     >
       <div
-        className="absolute bg-blue-500" // Player color, can be themed if desired
+        className="absolute bg-blue-500"
         style={{
           width: `${PLAYER_WIDTH}px`,
           height: `${PLAYER_HEIGHT}px`,
@@ -186,7 +193,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       {obstacles.map(obs => (
         <div
           key={obs.id}
-          className="absolute bg-red-500" // Obstacle color, can be themed
+          className="absolute bg-red-500"
           style={{
             width: `${OBSTACLE_WIDTH}px`,
             height: `${OBSTACLE_HEIGHT}px`,
