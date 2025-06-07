@@ -14,20 +14,24 @@ const BlockStackerGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRe
   const [internalIsGameOver, setInternalIsGameOver] = useState(false);
   const [isGameActive, setIsGameActive] = useState(false);
   const animationFrameId = useRef(null);
+  const gameAreaRef = useRef(null);
+  const blockIdCounter = useRef(1); // Start at 1 since 'base' can be 0 or string
 
   const resetGame = useCallback(() => {
-    const baseBlock = { x: GAME_WIDTH / 2 - BLOCK_WIDTH_INITIAL / 2, y: GAME_HEIGHT - BLOCK_HEIGHT, width: BLOCK_WIDTH_INITIAL, id: 'base' };
+    const baseBlock = { x: GAME_WIDTH / 2 - BLOCK_WIDTH_INITIAL / 2, y: GAME_HEIGHT - BLOCK_HEIGHT, width: BLOCK_WIDTH_INITIAL, id: 'base', color: 'bg-gray-400 border-gray-600' };
     setStackedBlocks([baseBlock]);
     setCurrentBlock({
       x: 0,
-      y: GAME_HEIGHT - BLOCK_HEIGHT * 2, // Start above the base block
+      y: GAME_HEIGHT - BLOCK_HEIGHT * 2, 
       width: BLOCK_WIDTH_INITIAL,
       speed: INITIAL_SPEED,
-      direction: 1, // 1 for right, -1 for left
+      direction: 1, 
+      color: 'bg-cyan-400 border-cyan-600'
     });
     setScore(0);
     setInternalIsGameOver(false);
     setIsGameActive(true);
+    blockIdCounter.current = 1;
     if (onScoreUpdate) onScoreUpdate(0);
   }, [onScoreUpdate]);
 
@@ -41,6 +45,11 @@ const BlockStackerGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRe
     }
   }, [isRunning, resetGame, isGameActive, internalIsGameOver]);
 
+  useEffect(() => {
+    if (isGameActive && !internalIsGameOver && !isPaused && gameAreaRef.current) {
+      gameAreaRef.current.focus({ preventScroll: true });
+    }
+  }, [isGameActive, internalIsGameOver, isPaused]);
 
   const gameTick = useCallback(() => {
     if (internalIsGameOver || !isGameActive || !currentBlock) {
@@ -53,7 +62,7 @@ const BlockStackerGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRe
     }
 
     setCurrentBlock(prev => {
-      if (!prev) return null; // Should not happen if !currentBlock guard is effective
+      if (!prev) return null; 
       let newX = prev.x + prev.speed * prev.direction;
       let newDirection = prev.direction;
 
@@ -83,25 +92,29 @@ const BlockStackerGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRe
         x: newBlockX,
         y: topStackedBlock.y - BLOCK_HEIGHT,
         width: overlap,
-        id: Date.now(),
+        id: blockIdCounter.current++,
+        color: currentBlock.color
       };
       setStackedBlocks(prev => [...prev, newStackedBlock]);
       
       const newScore = score + 1;
       setScore(newScore);
       if (onScoreUpdate) onScoreUpdate(newScore);
-
-      // Optional: Game gets harder or ends if tower is too high
-      // if (newStackedBlock.y < BLOCK_HEIGHT) { ... }
       
-      setCurrentBlock(prev => ({
-        ...prev,
+      const nextBlockColors = ['bg-purple-500 border-purple-700', 'bg-pink-500 border-pink-700', 'bg-orange-500 border-orange-700', 'bg-lime-500 border-lime-700'];
+      const nextColor = nextBlockColors[newScore % nextBlockColors.length];
+
+      const newCurrentBlockX = Math.random() < 0.5 ? 0 : GAME_WIDTH - overlap;
+      const newCurrentBlockDirection = newCurrentBlockX === 0 ? 1 : -1;
+
+      setCurrentBlock({
         y: newStackedBlock.y - BLOCK_HEIGHT, 
         width: overlap, 
-        x: Math.random() < 0.5 ? 0 : GAME_WIDTH - overlap, // Start next block from random side
-        speed: prev.speed + SPEED_INCREMENT, 
-        direction: prev.x === 0 ? 1 : -1, // Ensure it moves inwards initially
-      }));
+        x: newCurrentBlockX, 
+        speed: currentBlock.speed + SPEED_INCREMENT, 
+        direction: newCurrentBlockDirection,
+        color: nextColor
+      });
 
     } else {
       setInternalIsGameOver(true);
@@ -114,25 +127,33 @@ const BlockStackerGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRe
   useEffect(() => {
     if (isGameActive && !internalIsGameOver && !isPaused && currentBlock) {
         animationFrameId.current = requestAnimationFrame(gameTick);
+    } else {
+        if(animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     }
     return () => {
         if(animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     }
   }, [gameTick, isGameActive, internalIsGameOver, isPaused, currentBlock]);
 
+  const handleKeyDown = useCallback((e) => {
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault(); 
+      e.stopPropagation();
+      dropBlock();
+    }
+  }, [dropBlock]);
+
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.code === 'Space' || e.key === ' ') {
-        e.preventDefault(); 
-        dropBlock();
+    const gameElement = gameAreaRef.current;
+    if (gameElement && isGameActive && !internalIsGameOver && !isPaused) {
+      gameElement.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      if (gameElement) {
+        gameElement.removeEventListener('keydown', handleKeyDown);
       }
     };
-    // Add listener only when game is in a state to accept input
-    if (isGameActive && !internalIsGameOver && !isPaused) {
-        window.addEventListener('keydown', handleKeyDown);
-    }
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dropBlock, isGameActive, internalIsGameOver, isPaused]); // dropBlock is stable if its deps are stable
+  }, [handleKeyDown, isGameActive, internalIsGameOver, isPaused]);
   
   if (!isGameActive && !isRunning && !internalIsGameOver) {
     return (
@@ -144,31 +165,35 @@ const BlockStackerGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRe
 
   return (
     <div 
-      className="relative bg-gray-800 w-full h-full overflow-hidden border-2 border-accent select-none touch-manipulation"
+      ref={gameAreaRef} 
+      tabIndex={0} 
+      className="relative bg-gray-800 w-full h-full overflow-hidden border-2 border-accent select-none touch-manipulation cursor-pointer"
       style={{ width: `${GAME_WIDTH}px`, height: `${GAME_HEIGHT}px` }}
-      tabIndex={0}
+      onClick={isGameActive && !internalIsGameOver && !isPaused ? dropBlock : undefined}
     >
       {stackedBlocks.map(block => (
         <div
           key={block.id}
-          className="absolute bg-green-500 border border-green-700"
+          className={`absolute ${block.color} transition-all duration-100 ease-linear`}
           style={{
             left: `${block.x}px`,
             top: `${block.y}px`,
             width: `${block.width}px`,
             height: `${BLOCK_HEIGHT}px`,
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3), 0 1px 2px rgba(255,255,255,0.2)'
           }}
         />
       ))}
 
-      {isGameActive && !internalIsGameOver && currentBlock && (
+      {isGameActive && !internalIsGameOver && !isPaused && currentBlock && (
         <div
-          className="absolute bg-blue-500 border border-blue-700"
+          className={`absolute ${currentBlock.color}`}
           style={{
             left: `${currentBlock.x}px`,
             top: `${currentBlock.y}px`,
             width: `${currentBlock.width}px`,
             height: `${BLOCK_HEIGHT}px`,
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3), 0 1px 2px rgba(255,255,255,0.2)'
           }}
         />
       )}
@@ -180,18 +205,18 @@ const BlockStackerGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRe
         </div>
       )}
 
-      {isGameActive && !internalIsGameOver && (
-        <div className="absolute bottom-5 left-0 right-0 flex justify-center z-20">
+      {isGameActive && !internalIsGameOver && !isPaused && (
+        <div className="absolute bottom-5 left-0 right-0 flex justify-center z-20 md:hidden">
           <button 
-            onClick={dropBlock}
-            onTouchStart={(e) => { e.preventDefault(); dropBlock(); }}
-            className="px-10 py-5 bg-accent/80 text-white rounded-lg text-xl font-bold active:bg-accent shadow-lg"
+            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); if(!isPaused) dropBlock(); }}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if(!isPaused) dropBlock(); }}
+            className="px-12 py-6 bg-accent/80 text-white rounded-lg text-lg font-bold active:bg-accent shadow-lg select-none"
           >
             Drop Block
           </button>
         </div>
       )}
-      {isPaused && isGameActive && !internalIsGameOver && (
+       {isPaused && isGameActive && !internalIsGameOver && (
         <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center rounded-lg p-4 z-30">
           <h3 className="text-2xl sm:text-3xl font-bold text-white">Paused</h3>
         </div>

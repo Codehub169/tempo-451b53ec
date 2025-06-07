@@ -18,6 +18,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
   const [isGameActive, setIsGameActive] = useState(false);
   const gameAreaRef = useRef(null);
   const animationFrameId = useRef(null);
+  const obstacleIdCounter = useRef(0);
 
   const resetGame = useCallback(() => {
     setPlayerX(GAME_WIDTH / 2 - PLAYER_WIDTH / 2);
@@ -25,6 +26,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     setScore(0);
     setInternalIsGameOver(false);
     setIsGameActive(true);
+    obstacleIdCounter.current = 0;
     if (onScoreUpdate) onScoreUpdate(0);
   }, [onScoreUpdate]);
 
@@ -38,7 +40,6 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
     }
   }, [isRunning, resetGame, isGameActive, internalIsGameOver]);
 
-  // Focus game area when it becomes interactive and is not paused
   useEffect(() => {
     if (isGameActive && !internalIsGameOver && !isPaused && gameAreaRef.current) {
       gameAreaRef.current.focus({ preventScroll: true });
@@ -65,7 +66,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       newObstacles.push({ 
         x: newObstacleX, 
         y: 0, 
-        id: Date.now() + Math.random()
+        id: obstacleIdCounter.current++
       });
     }
 
@@ -74,7 +75,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       if (
         playerX < obs.x + OBSTACLE_WIDTH &&
         playerX + PLAYER_WIDTH > obs.x &&
-        GAME_HEIGHT - PLAYER_HEIGHT < obs.y + OBSTACLE_HEIGHT &&
+        (GAME_HEIGHT - PLAYER_HEIGHT) < (obs.y + OBSTACLE_HEIGHT) &&
         GAME_HEIGHT > obs.y
       ) {
         collisionDetected = true;
@@ -126,41 +127,41 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
   }, [gameTick, isGameActive, internalIsGameOver, isPaused]);
 
   const movePlayer = useCallback((direction) => {
-    if (internalIsGameOver || !isGameActive || isPaused) return;
+    // This function itself doesn't need to check game state, as handleKeyDown and touch handlers will.
     if (direction === 'left') {
       setPlayerX(prevX => Math.max(0, prevX - PLAYER_MOVE_AMOUNT));
     } else if (direction === 'right') {
       setPlayerX(prevX => Math.min(GAME_WIDTH - PLAYER_WIDTH, prevX + PLAYER_MOVE_AMOUNT));
     }
-  }, [internalIsGameOver, isGameActive, isPaused]);
+  }, []);
+
+  const handleKeyDown = useCallback((e) => {
+    const relevantKeys = ['ArrowLeft', 'a', 'A', 'ArrowRight', 'd', 'D'];
+    if (relevantKeys.includes(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (internalIsGameOver || !isGameActive || isPaused) return;
+
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+      movePlayer('left');
+    } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+      movePlayer('right');
+    }
+  }, [movePlayer, internalIsGameOver, isGameActive, isPaused]);
 
   useEffect(() => {
-    const gameElement = gameAreaRef.current; // Capture current ref value for cleanup
-
-    const handleKeyDown = (e) => {
-      if (internalIsGameOver || !isGameActive || isPaused) return;
-      
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        e.preventDefault();
-        e.stopPropagation();
-        movePlayer('left');
-      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        e.preventDefault();
-        e.stopPropagation();
-        movePlayer('right');
-      }
-    };
-
-    if (gameElement) {
+    const gameElement = gameAreaRef.current;
+    if (gameElement && isGameActive && !internalIsGameOver && !isPaused) {
       gameElement.addEventListener('keydown', handleKeyDown);
     }
-    
     return () => {
       if (gameElement) {
         gameElement.removeEventListener('keydown', handleKeyDown);
       }
     };
-  }, [internalIsGameOver, isGameActive, isPaused, movePlayer]);
+  }, [handleKeyDown, isGameActive, internalIsGameOver, isPaused]); // Added active/paused checks for adding/removing listener
   
   if (!isGameActive && !isRunning && !internalIsGameOver) {
     return (
@@ -175,10 +176,10 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       ref={gameAreaRef}
       className="relative bg-primary-bg w-full h-full overflow-hidden border-2 border-accent select-none touch-manipulation cursor-default"
       style={{ width: `${GAME_WIDTH}px`, height: `${GAME_HEIGHT}px` }}
-      tabIndex={0} // Makes the div focusable
+      tabIndex={0}
     >
       <div
-        className="absolute bg-blue-500"
+        className="absolute bg-green-400 rounded-t-md shadow-md"
         style={{
           width: `${PLAYER_WIDTH}px`,
           height: `${PLAYER_HEIGHT}px`,
@@ -193,7 +194,7 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
       {obstacles.map(obs => (
         <div
           key={obs.id}
-          className="absolute bg-red-500"
+          className="absolute bg-yellow-500 rounded-sm shadow"
           style={{
             width: `${OBSTACLE_WIDTH}px`,
             height: `${OBSTACLE_HEIGHT}px`,
@@ -212,23 +213,23 @@ const CosmicRushGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRead
         </div>
       )}
 
-      {isGameActive && !internalIsGameOver && (
+      {isGameActive && !internalIsGameOver && !isPaused && (
         <div className="absolute bottom-4 left-0 right-0 flex justify-around px-4 z-20 md:hidden">
           <button 
-            onTouchStart={(e) => { e.preventDefault(); movePlayer('left'); }}
-            onMouseDown={(e) => { e.preventDefault(); movePlayer('left'); }} 
-            className="px-8 py-4 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent select-none"
+            onTouchStart={(e) => { e.preventDefault(); if (!isPaused) movePlayer('left'); }}
+            onMouseDown={(e) => { e.preventDefault(); if (!isPaused) movePlayer('left'); }} 
+            className="px-10 py-5 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent select-none shadow-lg"
             aria-label="Move Left"
           >
-            Left
+            &larr; Left
           </button>
           <button 
-            onTouchStart={(e) => { e.preventDefault(); movePlayer('right'); }}
-            onMouseDown={(e) => { e.preventDefault(); movePlayer('right'); }} 
-            className="px-8 py-4 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent select-none"
+            onTouchStart={(e) => { e.preventDefault(); if (!isPaused) movePlayer('right'); }}
+            onMouseDown={(e) => { e.preventDefault(); if (!isPaused) movePlayer('right'); }} 
+            className="px-10 py-5 bg-accent/70 text-white rounded-lg text-xl font-bold active:bg-accent select-none shadow-lg"
             aria-label="Move Right"
           >
-            Right
+            Right &rarr;
           </button>
         </div>
       )}

@@ -10,12 +10,12 @@ const MAZE_GRID_DATA = [
   [1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],
   [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
   [1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1],
-  [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2], // 2 is the exit
+  [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2], 
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-]; // 0: path, 1: wall, 2: exit
+]; 
 
 const PLAYER_START_POS = { x: 1, y: 1 };
-const CELL_SIZE_CSS = 'min(max(2.5vw, 18px), 30px)';
+const CELL_SIZE_CSS = 'min(max(2.5vw, 16px), 28px)';
 const GAME_TIME_LIMIT_SECONDS = 60;
 const SCORE_PER_SECOND_PASSED = 5;
 const WIN_BASE_SCORE = 1000;
@@ -29,7 +29,7 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
   const [isGameActive, setIsGameActive] = useState(false);
   const [isGameWon, setIsGameWon] = useState(false);
   const [internalIsGameOver, setInternalIsGameOver] = useState(false);
-  const gameAreaRef = useRef(null); // Added for direct keyboard event handling
+  const gameAreaRef = useRef(null);
 
   const startGame = useCallback(() => {
     setPlayerPosition(PLAYER_START_POS);
@@ -51,7 +51,6 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
     }
   }, [isRunning, startGame, isGameActive, internalIsGameOver]);
 
-  // Focus game area when it becomes interactive and is not paused
   useEffect(() => {
     if (isGameActive && !internalIsGameOver && !isPaused && gameAreaRef.current) {
       gameAreaRef.current.focus({ preventScroll: true });
@@ -59,18 +58,17 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
   }, [isGameActive, internalIsGameOver, isPaused]);
 
   const movePlayer = useCallback((dx, dy) => {
-    if (!isGameActive || internalIsGameOver || isPaused) return;
-
+    // Game state checks are handled by callers (handleKeyDown, touch controls)
     const newX = playerPosition.x + dx;
     const newY = playerPosition.y + dy;
 
     if (
       newY >= 0 && newY < mazeGrid.length &&
       newX >= 0 && newX < mazeGrid[0].length &&
-      mazeGrid[newY][newX] !== 1 // Not a wall
+      mazeGrid[newY][newX] !== 1
     ) {
       setPlayerPosition({ x: newX, y: newY });
-      if (mazeGrid[newY][newX] === 2) { // Reached exit
+      if (mazeGrid[newY][newX] === 2) {
         setIsGameActive(false);
         setIsGameWon(true);
         setInternalIsGameOver(true);
@@ -79,36 +77,34 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
         if (onGameOver) onGameOver(finalScoreOnWin);
       }
     }
-  }, [isGameActive, internalIsGameOver, isPaused, playerPosition, mazeGrid, timeLeft, onGameOver]);
+  }, [playerPosition, mazeGrid, timeLeft, onGameOver, setIsGameActive, setIsGameWon, setInternalIsGameOver, setScore]);
+
+  const handleKeyDown = useCallback((e) => {
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    if (arrowKeys.includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    if (!isGameActive || internalIsGameOver || isPaused) return;
+    
+    if (e.key === 'ArrowUp') movePlayer(0, -1);
+    else if (e.key === 'ArrowDown') movePlayer(0, 1);
+    else if (e.key === 'ArrowLeft') movePlayer(-1, 0);
+    else if (e.key === 'ArrowRight') movePlayer(1, 0);
+  }, [movePlayer, isGameActive, internalIsGameOver, isPaused]);
 
   useEffect(() => {
     const gameElement = gameAreaRef.current;
-
-    const handleKeyDown = (e) => {
-      if (!isGameActive || internalIsGameOver || isPaused) return;
-      
-      const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-      if (arrowKeys.includes(e.key)) {
-          e.preventDefault();
-          e.stopPropagation();
-      }
-
-      if (e.key === 'ArrowUp') movePlayer(0, -1);
-      else if (e.key === 'ArrowDown') movePlayer(0, 1);
-      else if (e.key === 'ArrowLeft') movePlayer(-1, 0);
-      else if (e.key === 'ArrowRight') movePlayer(1, 0);
-    };
-
-    if (gameElement) {
+    if (gameElement && isGameActive && !internalIsGameOver && !isPaused) {
       gameElement.addEventListener('keydown', handleKeyDown);
     }
-    
     return () => {
       if (gameElement) {
         gameElement.removeEventListener('keydown', handleKeyDown);
       }
     };
-  }, [movePlayer, isGameActive, internalIsGameOver, isPaused]);
+  }, [handleKeyDown, isGameActive, internalIsGameOver, isPaused]);
 
   useEffect(() => {
     let timer;
@@ -117,22 +113,26 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
         timer = setTimeout(() => {
           const newTimeLeft = timeLeft - 1;
           setTimeLeft(newTimeLeft);
-          const currentScoreVal = Math.max(0, (GAME_TIME_LIMIT_SECONDS - newTimeLeft) * SCORE_PER_SECOND_PASSED);
-          setScore(currentScoreVal);
-          if (onScoreUpdate) onScoreUpdate(currentScoreVal);
+          if (!isGameWon) {
+            const currentScoreVal = Math.max(0, (GAME_TIME_LIMIT_SECONDS - newTimeLeft) * SCORE_PER_SECOND_PASSED);
+            setScore(currentScoreVal);
+            if (onScoreUpdate) onScoreUpdate(currentScoreVal);
+          }
         }, 1000);
       } else {
-        setIsGameActive(false);
-        setInternalIsGameOver(true);
-        if (onGameOver) onGameOver(score); // score is already updated based on time passed
+        if (!isGameWon) {
+            setIsGameActive(false);
+            setInternalIsGameOver(true);
+            if (onGameOver) onGameOver(score);
+        }
       }
     }
     return () => clearTimeout(timer);
-  }, [isGameActive, internalIsGameOver, isPaused, timeLeft, score, onScoreUpdate, onGameOver]);
+  }, [isGameActive, internalIsGameOver, isPaused, timeLeft, score, onScoreUpdate, onGameOver, isGameWon]);
   
   if (!isGameActive && !isRunning && !internalIsGameOver) {
      return (
-        <div className="flex flex-col items-center justify-center h-full bg-gray-800 p-4 rounded-lg text-text-medium">
+        <div className="flex flex-col items-center justify-center h-full bg-primary-bg p-4 rounded-lg text-text-medium">
             Press Start to Play
         </div>
      );
@@ -140,32 +140,32 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
   
   return (
     <div 
-      className="flex flex-col items-center justify-center h-full bg-gray-800 p-1 sm:p-2 rounded-lg relative touch-manipulation cursor-default"
-      ref={gameAreaRef} // Added ref
-      tabIndex={0} // Added tabIndex
+      className="flex flex-col items-center justify-center h-full bg-primary-bg p-1 sm:p-2 rounded-lg relative touch-manipulation cursor-default select-none"
+      ref={gameAreaRef}
+      tabIndex={0}
     >
       <div className="w-full flex justify-between items-center mb-2 sm:mb-4 px-1 sm:px-2">
-        <p className="text-base sm:text-lg md:text-xl text-text-light">Score: <span className='font-bold text-accent'>{score}</span></p>
-        <p className="text-base sm:text-lg md:text-xl text-text-light">Time: <span className='font-bold text-accent'>{timeLeft}s</span></p>
+        <p className="text-sm sm:text-lg md:text-xl text-text-light">Score: <span className='font-bold text-accent'>{score}</span></p>
+        <p className="text-sm sm:text-lg md:text-xl text-text-light">Time: <span className='font-bold text-accent'>{timeLeft}s</span></p>
       </div>
       <div 
-        className='grid border-2 border-accent rounded-md bg-gray-900 shadow-lg'
+        className='grid border-2 border-accent rounded-md bg-gray-900 shadow-xl'
         style={{
           gridTemplateColumns: `repeat(${mazeGrid[0].length}, ${CELL_SIZE_CSS})`,
           gridTemplateRows: `repeat(${mazeGrid.length}, ${CELL_SIZE_CSS})`,
-          outline: 'none' // Remove default browser focus outline on the grid itself
+          outline: 'none'
         }}
       >
         {mazeGrid.map((row, y) =>
           row.map((cell, x) => {
             let cellContent = null;
-            let cellClass = 'flex items-center justify-center select-none';
-            if (cell === 1) cellClass += ' bg-secondary-bg'; // Wall
-            else if (cell === 2) cellClass += ' bg-green-600'; // Exit
-            else cellClass += ' bg-gray-700'; // Path
+            let cellClass = 'flex items-center justify-center';
+            if (cell === 1) cellClass += ' bg-gray-600';
+            else if (cell === 2) cellClass += ' bg-emerald-500';
+            else cellClass += ' bg-gray-800';
 
             if (playerPosition.x === x && playerPosition.y === y) {
-              cellContent = <div className='w-3/4 h-3/4 bg-accent rounded-full shadow-inner' role="img" aria-label="Player"></div>;
+              cellContent = <div className='w-3/4 h-3/4 bg-orange-500 rounded-full shadow-md' role="img" aria-label="Player"></div>;
             }
             let ariaCellLabel = "Path";
             if (cell === 1) ariaCellLabel = "Wall";
@@ -187,29 +187,29 @@ const MazeRunnerXGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onRea
         )}
       </div>
       
-      {isGameActive && !internalIsGameOver && (
-        <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 z-20 opacity-70 hover:opacity-90 transition-opacity md:hidden">
-            <div className="grid grid-cols-3 gap-1 w-36 h-36 sm:w-40 sm:h-40">
+      {isGameActive && !internalIsGameOver && !isPaused && (
+        <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 z-20 opacity-80 hover:opacity-100 transition-opacity md:hidden">
+            <div className="grid grid-cols-3 gap-1 w-32 h-32 sm:w-36 sm:h-36">
                 <div className="col-start-2 flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(0, -1);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(0,-1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Up">\[u2191]</button>
+                    <button onTouchStart={(e) => {e.preventDefault(); if(!isPaused) movePlayer(0, -1);}} onMouseDown={(e) => {e.preventDefault(); if(!isPaused) movePlayer(0,-1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold shadow-lg" aria-label="Move Up">	
                 </div>
                 <div className="flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(-1, 0);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(-1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Left">\[u2190]</button>
-                </div>
-                <div className="flex justify-center items-center"> {/* Empty center for D-pad layout */}
+                    <button onTouchStart={(e) => {e.preventDefault(); if(!isPaused) movePlayer(-1, 0);}} onMouseDown={(e) => {e.preventDefault(); if(!isPaused) movePlayer(-1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold shadow-lg" aria-label="Move Left">	
                 </div>
                 <div className="flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(1, 0);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Right">\[u2192]</button>
+                </div>
+                <div className="flex justify-center items-center">
+                    <button onTouchStart={(e) => {e.preventDefault(); if(!isPaused) movePlayer(1, 0);}} onMouseDown={(e) => {e.preventDefault(); if(!isPaused) movePlayer(1,0);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold shadow-lg" aria-label="Move Right">	
                 </div>
                 <div className="col-start-2 flex justify-center items-center">
-                    <button onTouchStart={(e) => {e.preventDefault(); movePlayer(0, 1);}} onMouseDown={(e) => {e.preventDefault(); movePlayer(0,1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold" aria-label="Move Down">\[u2193]</button>
+                    <button onTouchStart={(e) => {e.preventDefault(); if(!isPaused) movePlayer(0, 1);}} onMouseDown={(e) => {e.preventDefault(); if(!isPaused) movePlayer(0,1);}} className="w-10 h-10 sm:w-12 sm:h-12 bg-secondary-bg/80 border border-accent text-accent rounded-md active:bg-accent active:text-white flex justify-center items-center text-xl font-bold shadow-lg" aria-label="Move Down">	
                 </div>
             </div>
         </div>
       )}
 
       {internalIsGameOver && (
-        <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center rounded-lg p-4 z-30">
+        <div className="absolute inset-0 bg-black bg-opacity-85 flex flex-col items-center justify-center rounded-lg p-4 z-30">
           <h3 className="text-xl sm:text-2xl md:text-3xl font-bold text-white mb-4 text-center">
             {isGameWon ? 'Congratulations! You Escaped!' : 'Game Over! Time\'s Up!'}
           </h3>

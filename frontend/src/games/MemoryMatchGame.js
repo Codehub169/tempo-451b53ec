@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-const CARD_VALUES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+// Using emojis for card symbols as per review comment
+const CARD_SYMBOLS = ['🍒', '🍋', '🍉', '🍓', '🍇', '🍑', '🍊', '🍏']; 
 const GAME_TIME_LIMIT = 120; // seconds
 
 const generateCards = () => {
-  const deck = [...CARD_VALUES, ...CARD_VALUES];
-  // Shuffle algorithm (Fisher-Yates)
+  const deck = [...CARD_SYMBOLS, ...CARD_SYMBOLS];
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -18,141 +18,166 @@ const generateCards = () => {
   }));
 };
 
-const MemoryMatchGame = ({ onScoreUpdate, onGameOver }) => {
+const MemoryMatchGame = ({ onScoreUpdate, onGameOver, isRunning, isPaused, onReady }) => {
   const [cards, setCards] = useState(generateCards());
-  const [flippedCards, setFlippedCards] = useState([]);
+  const [flippedCards, setFlippedCards] = useState([]); // Stores IDs of flipped cards
   const [matches, setMatches] = useState(0);
   const [timeLeft, setTimeLeft] = useState(GAME_TIME_LIMIT);
   const [isGameActive, setIsGameActive] = useState(false);
-  const [isGameOver, setIsGameOver] = useState(false);
+  const [internalIsGameOver, setInternalIsGameOver] = useState(false);
+  const [currentScore, setCurrentScore] = useState(0);
+
+  useEffect(() => {
+    if(onReady) onReady();
+  }, [onReady]);
 
   const startGame = useCallback(() => {
     setCards(generateCards());
     setFlippedCards([]);
     setMatches(0);
+    setCurrentScore(0);
     setTimeLeft(GAME_TIME_LIMIT);
     setIsGameActive(true);
-    setIsGameOver(false);
-    onScoreUpdate(0);
+    setInternalIsGameOver(false);
+    if (onScoreUpdate) onScoreUpdate(0);
   }, [onScoreUpdate]);
 
   useEffect(() => {
-    if (isGameActive && !isGameOver) {
+    if (isRunning && (!isGameActive || internalIsGameOver)) {
+      startGame();
+    }
+  }, [isRunning, isGameActive, internalIsGameOver, startGame]);
+
+
+  useEffect(() => {
+    let timer;
+    if (isGameActive && !internalIsGameOver && !isPaused) {
       if (timeLeft > 0) {
-        const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-        return () => clearTimeout(timer);
+        timer = setTimeout(() => setTimeLeft(prevTime => prevTime - 1), 1000);
       } else {
-        // Time's up
         setIsGameActive(false);
-        setIsGameOver(true);
-        onGameOver(matches * 10); // Score based on matches
+        setInternalIsGameOver(true);
+        if (onGameOver) onGameOver(currentScore);
       }
     }
-  }, [isGameActive, isGameOver, timeLeft, matches, onGameOver]);
+    return () => clearTimeout(timer);
+  }, [isGameActive, internalIsGameOver, isPaused, timeLeft, currentScore, onGameOver]);
 
   useEffect(() => {
     if (flippedCards.length === 2) {
-      const [firstCard, secondCard] = flippedCards;
-      if (cards[firstCard].value === cards[secondCard].value) {
-        // Match
+      const [firstCardId, secondCardId] = flippedCards;
+      // Find cards by ID from the `cards` state array
+      const card1 = cards.find(c => c.id === firstCardId);
+      const card2 = cards.find(c => c.id === secondCardId);
+
+      if (card1 && card2 && card1.value === card2.value) {
         setCards(prevCards =>
           prevCards.map(card =>
-            card.id === cards[firstCard].id || card.id === cards[secondCard].id
-              ? { ...card, isMatched: true, isFlipped: true }
+            card.id === firstCardId || card.id === secondCardId
+              ? { ...card, isMatched: true, isFlipped: true } // Keep them flipped
               : card
           )
         );
-        setMatches(prevMatches => {
-          const newMatches = prevMatches + 1;
-          onScoreUpdate(newMatches * 10);
-          return newMatches;
-        });
+        const newMatches = matches + 1;
+        setMatches(newMatches);
+        const newScore = newMatches * 10;
+        setCurrentScore(newScore);
+        if (onScoreUpdate) onScoreUpdate(newScore);
         setFlippedCards([]);
       } else {
-        // No match
         setTimeout(() => {
           setCards(prevCards =>
             prevCards.map(card =>
-              card.id === cards[firstCard].id || card.id === cards[secondCard].id
-                ? { ...card, isFlipped: false }
+              card.id === firstCardId || card.id === secondCardId
+                ? { ...card, isFlipped: false } // Flip back
                 : card
             )
           );
           setFlippedCards([]);
-        }, 1000);
+        }, 800);
       }
     }
-  }, [flippedCards, cards, onScoreUpdate]);
+  }, [flippedCards, cards, matches, onScoreUpdate]); // `cards` and `matches` are dependencies
 
   useEffect(() => {
-    if (isGameActive && matches === CARD_VALUES.length) {
-      // All pairs matched
+    if (isGameActive && !internalIsGameOver && matches === CARD_SYMBOLS.length) {
       setIsGameActive(false);
-      setIsGameOver(true);
-      const score = (matches * 10) + timeLeft; // Bonus for time left
-      onGameOver(score);
+      setInternalIsGameOver(true);
+      const finalScore = currentScore + timeLeft; // Bonus for time left
+      setCurrentScore(finalScore); // Update local score state as well
+      if (onGameOver) onGameOver(finalScore);
     }
-  }, [matches, isGameActive, timeLeft, onGameOver]);
+  }, [matches, isGameActive, internalIsGameOver, timeLeft, onGameOver, currentScore]);
 
-  const handleCardClick = (index) => {
-    if (!isGameActive || isGameOver || cards[index].isFlipped || flippedCards.length === 2) {
-      return;
-    }
+  const handleCardClick = (cardId) => {
+    if (!isGameActive || internalIsGameOver || isPaused || flippedCards.length === 2) return;
+    
+    const clickedCard = cards.find(c => c.id === cardId);
+    if (!clickedCard || clickedCard.isFlipped || clickedCard.isMatched) return;
 
     setCards(prevCards =>
       prevCards.map(card =>
-        card.id === index ? { ...card, isFlipped: true } : card
+        card.id === cardId ? { ...card, isFlipped: true } : card
       )
     );
-    setFlippedCards(prevFlipped => [...prevFlipped, index]);
+    setFlippedCards(prevFlipped => [...prevFlipped, cardId]);
   };
 
-  if (!isGameActive && !isGameOver) {
+  if (!isGameActive && !internalIsGameOver && !isRunning) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-800 p-4 rounded-lg">
-        <h2 className="text-3xl font-bold text-accent mb-6">Memory Match</h2>
-        <button 
-          onClick={startGame}
-          className="px-6 py-3 bg-accent text-white font-semibold rounded-lg text-xl hover:bg-pink-700 transition-colors duration-300"
-        >
-          Start Game
-        </button>
+      <div className="flex items-center justify-center w-full h-full text-text-medium">
+        Press Start (on GamePage) to Play
       </div>
     );
   }
+   if (!isGameActive && !internalIsGameOver && isRunning && !cards.some(c => c.isFlipped)) { 
+     return (
+      <div className="flex flex-col items-center justify-center h-full bg-primary-bg p-4 rounded-lg">
+        <h2 className="text-3xl font-bold text-accent mb-6 font-secondary">Memory Match</h2>
+         <p className="text-text-medium text-center">Match all pairs of fruits!</p>
+         <p className="text-text-light text-sm mt-2">Game is ready. It will start automatically.</p>
+      </div>
+    );
+   }
+
 
   return (
-    <div className="flex flex-col items-center p-4 bg-gray-800 rounded-lg h-full">
-      <div className="w-full flex justify-between items-center mb-4">
-        <p className="text-xl text-text-light">Matches: <span className='font-bold text-accent'>{matches}</span>/{CARD_VALUES.length}</p>
-        <p className="text-xl text-text-light">Time Left: <span className='font-bold text-accent'>{timeLeft}s</span></p>
+    <div className="flex flex-col items-center p-2 sm:p-4 bg-primary-bg rounded-lg h-full w-full select-none">
+      <div className="w-full flex justify-between items-center mb-2 sm:mb-4 px-2">
+        <p className="text-sm sm:text-lg text-text-light">Score: <span className='font-bold text-accent'>{currentScore}</span></p>
+        <p className="text-sm sm:text-lg text-text-light">Time: <span className='font-bold text-accent'>{timeLeft}s</span></p>
       </div>
-      <div className="grid grid-cols-4 gap-3 sm:gap-4 w-full max-w-md flex-grow">
-        {cards.map((card, index) => (
+      <div className="grid grid-cols-4 gap-2 sm:gap-3 w-full max-w-sm flex-grow">
+        {cards.map(card => (
           <div
             key={card.id}
-            onClick={() => handleCardClick(index)}
-            className={`aspect-square rounded-lg flex items-center justify-center text-2xl sm:text-4xl font-bold cursor-pointer transition-all duration-300 transform
-              ${card.isFlipped || card.isMatched ? 'bg-accent text-white rotate-y-180' : 'bg-secondary-bg hover:bg-gray-600'}
-              ${card.isMatched ? 'opacity-50 cursor-not-allowed' : ''}
+            onClick={() => handleCardClick(card.id)}
+            className={`aspect-square rounded-lg flex items-center justify-center text-2xl sm:text-4xl font-bold cursor-pointer transition-all duration-300 preserve-3d shadow-md
+              ${card.isFlipped || card.isMatched ? 'bg-teal-500 text-white rotate-y-180' : 'bg-blue-700 hover:bg-blue-600'}
+              ${card.isMatched ? 'opacity-60 cursor-not-allowed' : ''}
             `}
+            style={{ perspective: '1000px'}}
+            role="button"
+            aria-pressed={card.isFlipped}
+            aria-label={`Card ${card.isFlipped || card.isMatched ? card.value : 'hidden'}`}
           >
-            {(card.isFlipped || card.isMatched) ? card.value : '?'}
+            <div style={{ transform: (card.isFlipped || card.isMatched) ? 'rotateY(180deg)' : 'rotateY(0deg)', transition: 'transform 0.5s', backfaceVisibility: 'hidden' }}>
+                {(card.isFlipped || card.isMatched) ? card.value : <span className="text-blue-300">?</span>}
+            </div>
           </div>
         ))}
       </div>
-      {isGameOver && (
-        <div className="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center rounded-lg">
-          <h3 className="text-3xl font-bold text-white mb-4">
-            {matches === CARD_VALUES.length ? 'You Won!' : 'Time\'s Up!'}
+      {internalIsGameOver && (
+        <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center rounded-lg p-4 z-30">
+          <h3 className="text-2xl sm:text-3xl font-bold text-white mb-4">
+            {matches === CARD_SYMBOLS.length ? 'You Won!' : 'Time\'s Up!'}
           </h3>
-          <p className="text-xl text-white mb-6">Final Score: {matches * 10 + (matches === CARD_VALUES.length ? timeLeft : 0)}</p>
-          <button 
-            onClick={startGame}
-            className="px-6 py-3 bg-accent text-white font-semibold rounded-lg text-xl hover:bg-pink-700 transition-colors duration-300"
-          >
-            Play Again
-          </button>
+          <p className="text-lg sm:text-xl text-white mb-6">Final Score: {currentScore}</p>
+        </div>
+      )}
+      {isPaused && isGameActive && !internalIsGameOver && (
+        <div className="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center rounded-lg p-4 z-40">
+          <h3 className="text-2xl sm:text-3xl font-bold text-white">Paused</h3>
         </div>
       )}
     </div>
